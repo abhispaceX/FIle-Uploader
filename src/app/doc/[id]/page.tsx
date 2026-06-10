@@ -17,47 +17,54 @@ export default async function DocPage({
   if (!me) redirect("/login");
 
   const sb = supabaseAdmin();
-  const access = await getAccessLevel(sb, id, me.id);
+
+  // Run all read-only queries in parallel — they don't depend on each other.
+  // Total wait drops from ~5 sequential round-trips to ~1.
+  const [access, docRes, allProfilesRes] = await Promise.all([
+    getAccessLevel(sb, id, me.id),
+    sb
+      .from("documents")
+      .select(
+        "id,title,content_json,owner_id,updated_at,owner:profiles!documents_owner_id_fkey(id,email,display_name)",
+      )
+      .eq("id", id)
+      .maybeSingle(),
+    sb.from("profiles").select("id,email,display_name").order("display_name"),
+  ]);
+
   if (!canRead(access)) notFound();
+  const docRow = docRes.data;
+  if (!docRow) notFound();
 
-  const { data: doc, error } = await sb
-    .from("documents")
-    .select("id,title,content_json,owner_id,updated_at")
-    .eq("id", id)
-    .single();
-  if (error || !doc) notFound();
+  const ownerRel = (docRow as { owner: Profile | Profile[] | null }).owner;
+  const ownerProfile: Profile | null = Array.isArray(ownerRel)
+    ? ownerRel[0] ?? null
+    : ownerRel;
 
-  const { data: ownerProfile } = await sb
-    .from("profiles")
-    .select("id,email,display_name")
-    .eq("id", doc.owner_id)
-    .single();
-
-  const { data: allProfiles } = await sb
-    .from("profiles")
-    .select("id,email,display_name")
-    .order("display_name");
-
-  const { data: existingShares } = access === "owner"
-    ? await sb
-        .from("shares")
-        .select("user_id,role")
-        .eq("document_id", id)
-    : { data: [] };
+  // Shares are only used to populate the Share dialog — owner-only.
+  const sharesRes = access === "owner"
+    ? await sb.from("shares").select("user_id,role").eq("document_id", id)
+    : { data: [] as { user_id: string; role: "viewer" | "editor" }[] };
 
   return (
     <EditorView
       me={me}
       doc={{
-        id: doc.id,
-        title: doc.title,
-        content_json: doc.content_json,
-        updated_at: doc.updated_at,
+        id: docRow.id,
+        title: docRow.title,
+        content_json: docRow.content_json,
+        updated_at: docRow.updated_at,
       }}
       access={access}
-      owner={(ownerProfile as Profile | null) ?? { id: doc.owner_id, email: "", display_name: "Unknown" }}
-      allUsers={(allProfiles as Profile[]) ?? []}
-      initialShares={(existingShares ?? []) as { user_id: string; role: "viewer" | "editor" }[]}
+      owner={
+        ownerProfile ?? {
+          id: docRow.owner_id,
+          email: "",
+          display_name: "Unknown",
+        }
+      }
+      allUsers={(allProfilesRes.data as Profile[]) ?? []}
+      initialShares={(sharesRes.data ?? []) as { user_id: string; role: "viewer" | "editor" }[]}
     />
   );
 }

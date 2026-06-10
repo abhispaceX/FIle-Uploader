@@ -46,6 +46,7 @@ export default function EditorView({
     at: new Date(doc.updated_at).getTime(),
   });
   const [shareOpen, setShareOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const contentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,9 +123,10 @@ export default function EditorView({
   }
 
   async function logout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
-    router.refresh();
   }
 
   return (
@@ -156,9 +158,16 @@ export default function EditorView({
           )}
           <button
             onClick={logout}
-            className="text-xs text-muted hover:text-foreground underline-offset-2 hover:underline"
+            disabled={loggingOut}
+            className="text-xs text-muted hover:text-foreground underline-offset-2 hover:underline disabled:opacity-60 disabled:cursor-progress inline-flex items-center gap-1"
           >
-            Switch user
+            {loggingOut && (
+              <span
+                className="inline-block w-2.5 h-2.5 border-2 border-current border-t-transparent rounded-full animate-spin"
+                aria-hidden
+              />
+            )}
+            {loggingOut ? "Switching…" : "Switch user"}
           </button>
         </div>
       </header>
