@@ -109,11 +109,13 @@ export default function DashboardClient({
     startTransition(() => router.refresh());
   }
 
+  const [importing, setImporting] = useState(false);
+
   async function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const t = toast.loading("Importing…");
+    setImporting(true);
     try {
       const { title, content_json } = await importFile(file);
       const res = await fetch("/api/docs", {
@@ -122,15 +124,16 @@ export default function DashboardClient({
         body: JSON.stringify({ title, content_json }),
       });
       const body = await res.json().catch(() => ({}));
-      toast.dismiss(t);
       if (!res.ok) {
+        setImporting(false);
         toast.error(body.error ?? "Import failed");
         return;
       }
-      toast.success("Imported");
+      // Navigate straight to the new doc — no success toast, no extra step.
+      // The doc page has a loading.tsx so the user sees feedback immediately.
       router.push(`/doc/${body.id}`);
     } catch (err) {
-      toast.dismiss(t);
+      setImporting(false);
       toast.error(err instanceof Error ? err.message : "Import failed");
     }
   }
@@ -190,13 +193,21 @@ export default function DashboardClient({
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-surface"
+              disabled={importing}
+              className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-surface disabled:opacity-50 disabled:cursor-progress inline-flex items-center gap-2"
             >
-              Import .md / .txt
+              {importing && (
+                <span
+                  className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"
+                  aria-hidden
+                />
+              )}
+              {importing ? "Importing…" : "Import .md / .txt"}
             </button>
             <button
               onClick={createDoc}
-              className="rounded-md bg-foreground text-background px-3 py-2 text-sm font-medium hover:opacity-90"
+              disabled={importing}
+              className="rounded-md bg-foreground text-background px-3 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
             >
               + New document
             </button>
